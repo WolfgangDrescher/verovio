@@ -211,6 +211,8 @@ $exports .= "'_malloc',";
 $exports .= "'_free'";
 $exports .= "]\"";
 
+my $nodeModule = "-s MODULARIZE=1 -s EXPORT_ES6=1"
+
 my $extra_exports = "-s EXPORTED_RUNTIME_METHODS='[\"cwrap\"]'";
 
 if ($makeQ) {
@@ -227,7 +229,7 @@ my $makeCmd = "$EMMAKE make -j 8";
 system($makeCmd);
 
 print "*************\nLinking...\n";
-my $ccCmd = "$EMCC $CHATTY libverovio.a $LFLAGS $FLAGS $embed $exports $extra_exports $output";
+my $ccCmd = "$EMCC $CHATTY libverovio.a $LFLAGS $FLAGS $embed $exports $extra_exports $output $nodeModule";
 print "$ccCmd\n" if $CHATTY;
 
 system($ccCmd);
