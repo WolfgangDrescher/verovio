@@ -169,6 +169,8 @@ $cmake .= " -DNO_MUSICXML_SUPPORT=ON" if ($nomusicxml);
 my $embed   = "--embed-file $DATA_DIR/";
 my $output  = "-o $BUILD_DIR/verovio.js";
 
+my $nodeModule = "-s MODULARIZE=1 -s EXPORT_ES6=1"
+
 my $exports = "-s EXPORTED_FUNCTIONS=\"[";
 $exports .= "'_vrvToolkit_constructor',";
 $exports .= "'_vrvToolkit_destructor',";
@@ -210,8 +212,6 @@ $exports .= "'_vrvToolkit_validatePAE',";
 $exports .= "'_malloc',";
 $exports .= "'_free'";
 $exports .= "]\"";
-
-my $nodeModule = "-s MODULARIZE=1 -s EXPORT_ES6=1"
 
 my $extra_exports = "-s EXPORTED_RUNTIME_METHODS='[\"cwrap\"]'";
 
