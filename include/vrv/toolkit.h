@@ -333,9 +333,11 @@ public:
      *
      * @param data A string with the data (e.g., MEI data) to be loaded
      * @param jsonOptions A stringified JSON objects with the output options
+     * @param pageNo The page to render (1-based)
+     * @param selection The selection as a stringified JSON object
      * @return The SVG first page as a string
      */
-    std::string RenderData(const std::string &data, const std::string &jsonOptions);
+    std::string RenderData(const std::string &data, const std::string &jsonOptions, int pageNo = 1, const std::string &selection = "");
 
     /**
      * Render a page to SVG.

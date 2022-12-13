@@ -1357,9 +1357,9 @@ bool Toolkit::RenderToDeviceContext(int pageNo, DeviceContext *deviceContext)
     return true;
 }
 
-std::string Toolkit::RenderData(const std::string &data, const std::string &jsonOptions)
+std::string Toolkit::RenderData(const std::string &data, const std::string &jsonOptions, int pageNo, const std::string &selection)
 {
-    if (this->SetOptions(jsonOptions) && this->LoadData(data)) return this->RenderToSVG(1);
+    if (this->SetOptions(jsonOptions) && this->Select(selection) && this->LoadData(data)) return this->RenderToSVG(pageNo);
 
     // Otherwise just return an empty string.
     return "";
