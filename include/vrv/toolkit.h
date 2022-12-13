@@ -337,7 +337,8 @@ public:
      * @param selection The selection as a stringified JSON object
      * @return The SVG first page as a string
      */
-    std::string RenderData(const std::string &data, const std::string &jsonOptions, int pageNo = 1, const std::string &selection = "");
+    std::string RenderData(
+        const std::string &data, const std::string &jsonOptions, int pageNo = 1, const std::string &selection = "");
 
     /**
      * Render a page to SVG.
