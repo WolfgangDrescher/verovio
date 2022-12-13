@@ -146,8 +146,8 @@ export class VerovioToolkit {
         this.proxy.redoPagePitchPosLayout(this.ptr);
     }
 
-    renderData(data, options) {
-        return this.proxy.renderData(this.ptr, data, JSON.stringify(options));
+    renderData(data, options, pageNo = 1, selection = "") {
+        return this.proxy.renderData(this.ptr, data, JSON.stringify(options), pageNo, JSON.stringify(selection));
     }
 
     renderToMIDI(options) {

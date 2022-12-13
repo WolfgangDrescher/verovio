@@ -100,7 +100,7 @@ function getToolkitFunction(VerovioModule, method) {
     mapping.redoPagePitchPosLayout = VerovioModule.cwrap("vrvToolkit_redoPagePitchPosLayout", null, ["number"]);
 
     // char *renderData(Toolkit *ic, const char *data, const char *options)
-    mapping.renderData = VerovioModule.cwrap("vrvToolkit_renderData", "string", ["number", "string", "string"]);
+    mapping.renderData = VerovioModule.cwrap("vrvToolkit_renderData", "string", ["number", "string", "string", "number", "string"]);
 
     // char *renderToMIDI(Toolkit *ic, const char *rendering_options)
     mapping.renderToMIDI = VerovioModule.cwrap("vrvToolkit_renderToMIDI", "string", ["number", "string"]);
