@@ -285,7 +285,7 @@ int Measure::GetRightBarLineXRel() const
     return 0;
 }
 
-int Measure::CalculateRightBarLineWidth(Doc *doc, int staffSize)
+int Measure::CalculateRightBarLineWidth(const Doc *doc, int staffSize) const
 {
     const BarLine *barline = this->GetRightBarLine();
     if (!barline) return 0;
@@ -298,7 +298,8 @@ int Measure::CalculateRightBarLineWidth(Doc *doc, int staffSize)
     int width = 0;
     switch (barline->GetForm()) {
         case BARRENDITION_dbl:
-        case BARRENDITION_dbldashed: {
+        case BARRENDITION_dbldashed:
+        case BARRENDITION_dbldotted: {
             width = barLineSeparation + barLineWidth;
             break;
         }
@@ -408,14 +409,14 @@ std::vector<Staff *> Measure::GetFirstStaffGrpStaves(ScoreDef *scoreDef)
     ListOfObjects staffGrps = scoreDef->FindAllDescendantsByType(STAFFGRP);
 
     // Then the @n of each first staffDef
-    for (auto &staffGrp : staffGrps) {
+    for (Object *staffGrp : staffGrps) {
         StaffDef *staffDef = vrv_cast<StaffDef *>((staffGrp)->FindDescendantByType(STAFFDEF));
         if (staffDef && (staffDef->GetDrawingVisibility() != OPTIMIZATION_HIDDEN)) staffList.insert(staffDef->GetN());
     }
 
     // Get the corresponding staves in the measure
-    for (auto iter = staffList.begin(); iter != staffList.end(); ++iter) {
-        AttNIntegerComparison matchN(STAFF, *iter);
+    for (int staffN : staffList) {
+        AttNIntegerComparison matchN(STAFF, staffN);
         Staff *staff = vrv_cast<Staff *>(this->FindDescendantByComparison(&matchN, 1));
         if (!staff) {
             // LogDebug("Staff with @n '%d' not found in measure '%s'", *iter, measure->GetID().c_str());
@@ -436,7 +437,7 @@ const Staff *Measure::GetTopVisibleStaff() const
 {
     const Staff *staff = NULL;
     ListOfConstObjects staves = this->FindAllDescendantsByType(STAFF, false);
-    for (auto &child : staves) {
+    for (const Object *child : staves) {
         staff = vrv_cast<const Staff *>(child);
         assert(staff);
         if (staff->DrawingIsVisible()) {
@@ -792,18 +793,12 @@ int Measure::ConvertToUnCastOffMensural(FunctorParams *functorParams)
 
 int Measure::Save(FunctorParams *functorParams)
 {
-    if (this->IsMeasuredMusic())
-        return Object::Save(functorParams);
-    else
-        return FUNCTOR_CONTINUE;
+    return (this->IsMeasuredMusic()) ? Object::Save(functorParams) : FUNCTOR_CONTINUE;
 }
 
 int Measure::SaveEnd(FunctorParams *functorParams)
 {
-    if (this->IsMeasuredMusic())
-        return Object::SaveEnd(functorParams);
-    else
-        return FUNCTOR_CONTINUE;
+    return (this->IsMeasuredMusic()) ? Object::SaveEnd(functorParams) : FUNCTOR_CONTINUE;
 }
 
 int Measure::ScoreDefUnsetCurrent(FunctorParams *functorParams)

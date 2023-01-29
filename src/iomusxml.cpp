@@ -504,10 +504,12 @@ void MusicXmlInput::FillSpace(Layer *layer, int dur)
         Space *space = new Space();
         space->SetDur(space->AttDurationLog::StrToDuration(durStr));
         space->SetDurPpq(m_ppq * quarters);
-        if (m_elementStackMap.at(layer).empty())
+        if (m_elementStackMap.at(layer).empty()) {
             layer->AddChild(space);
-        else
+        }
+        else {
             m_elementStackMap.at(layer).back()->AddChild(space);
+        }
         m_layerTimes[layer].emplace(dur, space);
         dur -= m_ppq * quarters;
     }
@@ -600,6 +602,7 @@ std::string MusicXmlInput::GetWordsOrDynamicsText(const pugi::xml_node node) con
             else {
                 dynamStr += xmlDynamPart.name();
             }
+            if (xmlDynamPart != node.last_child()) dynamStr += " ";
         }
         return dynamStr;
     }
@@ -719,7 +722,7 @@ void MusicXmlInput::PrintMetronome(pugi::xml_node metronome, Tempo *tempo)
                     [](const auto pair) { return pair.first == MetronomeElements::SEPARATOR; });
                 const short int dotCount = (short int)std::count_if(
                     iter, separator, [](const auto pair) { return pair.first == MetronomeElements::BEAT_UNIT_DOT; });
-                for (short int i = 0; i < dotCount; i++) {
+                for (short int i = 0; i < dotCount; ++i) {
                     verovioText += U"\xE1E7"; // SMUFL augmentation dot
                 }
                 // set @mmUnit and @mmDots attributes only based on the first beat-unit in the sequence
@@ -1443,10 +1446,7 @@ short int MusicXmlInput::ReadMusicXmlPartAttributesAsStaffDef(
             // measure style
             pugi::xpath_node measureSlash = it->select_node("measure-style/slash");
             if (measureSlash) {
-                if (HasAttributeWithValue(measureSlash.node(), "type", "start"))
-                    m_slash = true;
-                else
-                    m_slash = false;
+                m_slash = (HasAttributeWithValue(measureSlash.node(), "type", "start")) ? true : false;
             }
         }
     }
@@ -1547,7 +1547,7 @@ bool MusicXmlInput::ReadMusicXmlPart(pugi::xml_node node, Section *section, shor
                 }
             }
         }
-        i++;
+        ++i;
     }
 
     // clean up part specific stacks
@@ -1564,11 +1564,9 @@ bool MusicXmlInput::ReadMusicXmlPart(pugi::xml_node node, Section *section, shor
         }
         m_bracketStack.clear();
     }
-    if (!m_hairpinStack.empty() || !m_hairpinStopStack.empty()) {
-        LogWarning(
-            "MusicXML import: There are %d hairpins left open", m_hairpinStack.size() + m_hairpinStopStack.size());
+    if (!m_hairpinStack.empty()) {
+        LogWarning("MusicXML import: There are %d hairpins left open", m_hairpinStack.size());
         m_hairpinStack.clear();
-        m_hairpinStopStack.clear();
     }
 
     return false;
@@ -1591,8 +1589,7 @@ bool MusicXmlInput::ReadMusicXmlMeasure(
         measure->AddChild(mNum);
     }
 
-    int i = 0;
-    for (i = 0; i < nbStaves; i++) {
+    for (int i = 0; i < nbStaves; ++i) {
         // the staff @n must take into account the staffOffset
         Staff *staff = new Staff();
         staff->SetN(i + 1 + staffOffset);
@@ -1691,9 +1688,10 @@ bool MusicXmlInput::ReadMusicXmlMeasure(
             ++iter;
         }
     }
-    if (!m_tieStopStack.empty()) { // clear m_tieStopStack after each measure
-        m_tieStopStack.clear();
-    }
+
+    // clear stop stacks after each measure
+    m_hairpinStopStack.clear();
+    m_tieStopStack.clear();
 
     for (auto staff : measure->GetChildren()) {
         if (!staff->Is(STAFF)) {
@@ -1779,16 +1777,10 @@ void MusicXmlInput::ReadMusicXmlAttributes(
     pugi::xpath_node measureRepeat = node.select_node("measure-style/measure-repeat");
     pugi::xpath_node measureSlash = node.select_node("measure-style/slash");
     if (measureRepeat) {
-        if (HasAttributeWithValue(measureRepeat.node(), "type", "start"))
-            m_mRpt = true;
-        else
-            m_mRpt = false;
+        m_mRpt = (HasAttributeWithValue(measureRepeat.node(), "type", "start")) ? true : false;
     }
     if (measureSlash) {
-        if (HasAttributeWithValue(measureSlash.node(), "type", "start"))
-            m_slash = true;
-        else
-            m_slash = false;
+        m_slash = (HasAttributeWithValue(measureSlash.node(), "type", "start")) ? true : false;
     }
 }
 
@@ -1828,11 +1820,13 @@ void MusicXmlInput::ReadMusicXmlBarLine(pugi::xml_node node, Measure *measure, c
             measure->SetRight(barRendition);
             if (barStyle == "short" || barStyle == "tick") {
                 measure->SetBarLen(4);
-                if (barStyle == "short")
+                if (barStyle == "short") {
                     measure->SetBarPlace(2);
-                else
+                }
+                else {
                     // bar.place counts in note order (high values are vertically higher).
                     measure->SetBarPlace(6);
+                }
             }
         }
     }
@@ -2176,27 +2170,30 @@ void MusicXmlInput::ReadMusicXmlDirection(
     for (pugi::xpath_node_set::const_iterator wedge = wedges.begin(); wedge != wedges.end(); ++wedge) {
         short int hairpinNumber = wedge->node().attribute("number").as_int();
         hairpinNumber = (hairpinNumber < 1) ? 1 : hairpinNumber;
+        bool matchedWedge = false;
         if (HasAttributeWithValue(wedge->node(), "type", "stop")) {
             // match wedge type=stop to open hairpin
-            std::vector<std::pair<Hairpin *, musicxml::OpenSpanner>>::reverse_iterator riter;
-            for (riter = m_hairpinStack.rbegin(); riter != m_hairpinStack.rend(); ++riter) {
-                if (riter->second.m_dirN == hairpinNumber) {
-                    const int measureDifference = m_measureCounts.at(measure) - riter->second.m_lastMeasureCount;
+            std::vector<std::pair<Hairpin *, musicxml::OpenSpanner>>::iterator iter;
+            for (iter = m_hairpinStack.begin(); iter != m_hairpinStack.end(); ++iter) {
+                if (iter->second.m_dirN == hairpinNumber) {
+                    const int measureDifference = m_measureCounts.at(measure) - iter->second.m_lastMeasureCount;
                     if (measureDifference >= 0) {
-                        riter->first->SetTstamp2(std::pair<int, double>(measureDifference, timeStamp - 0.5));
+                        iter->first->SetTstamp2(std::pair<int, double>(measureDifference, timeStamp));
                     }
                     if (wedge->node().attribute("spread")) {
                         data_MEASUREMENTSIGNED opening;
                         opening.SetVu(wedge->node().attribute("spread").as_double() / 5);
-                        riter->first->SetOpening(opening);
+                        iter->first->SetOpening(opening);
                     }
-                    m_hairpinStack.erase(std::next(riter).base());
-                    return;
+                    matchedWedge = true;
+                    m_hairpinStack.erase(iter);
+                    break;
                 }
             }
-            // ...or push on hairpin stop stack, if not matched.
-            m_hairpinStopStack.push_back(std::tuple<int, double, musicxml::OpenSpanner>(
-                0, timeStamp, musicxml::OpenSpanner(hairpinNumber, m_measureCounts.at(measure))));
+            if (!matchedWedge) {
+                m_hairpinStopStack.push_back(std::tuple<int, double, musicxml::OpenSpanner>(
+                    0, timeStamp, musicxml::OpenSpanner(hairpinNumber, m_measureCounts.at(measure))));
+            }
         }
         else {
             Hairpin *hairpin = new Hairpin();
@@ -2237,18 +2234,20 @@ void MusicXmlInput::ReadMusicXmlDirection(
             // match new hairpin to existing hairpin stop
             for (auto iter = m_hairpinStopStack.begin(); iter != m_hairpinStopStack.end(); ++iter) {
                 const int measureDifference = std::get<2>(*iter).m_lastMeasureCount - m_measureCounts.at(measure);
-                if (std::get<2>(*iter).m_dirN == hairpinNumber) {
+                if ((std::get<2>(*iter).m_dirN == hairpinNumber) && (measureDifference == 0)) {
                     if (measureDifference >= 0) {
                         hairpin->SetTstamp2(std::pair<int, double>(measureDifference, std::get<1>(*iter)));
                         m_controlElements.push_back({ measureNum, hairpin });
                     }
+                    matchedWedge = true;
                     m_hairpinStopStack.erase(iter);
-                    return;
+                    break;
                 }
             }
-            // ...or push to open hairpin stack.
-            m_controlElements.push_back({ measureNum, hairpin });
-            m_hairpinStack.push_back({ hairpin, openHairpin });
+            if (!matchedWedge) {
+                m_controlElements.push_back({ measureNum, hairpin });
+                m_hairpinStack.push_back({ hairpin, openHairpin });
+            }
         }
     }
 
@@ -2287,8 +2286,9 @@ void MusicXmlInput::ReadMusicXmlDirection(
                 octave->SetDisPlace(STAFFREL_basic_below);
                 m_octDis[staffNum] *= -1;
             }
-            else
+            else {
                 octave->SetDisPlace(STAFFREL_basic_above);
+            }
             m_controlElements.push_back({ measureNum, octave });
             m_octaveStack.push_back(octave);
         }
@@ -2450,35 +2450,46 @@ void MusicXmlInput::ReadMusicXmlFigures(pugi::xml_node node, Measure *measure, c
     assert(node);
     assert(measure);
 
-    if (!HasAttributeWithValue(node, "print-object", "no")) {
-        Harm *harm = new Harm();
-        Fb *fb = new Fb();
+    if (HasAttributeWithValue(node, "print-object", "no")) return;
 
-        const bool paren = node.attribute("parentheses").as_bool();
+    std::vector<F *> figures;
 
-        // std::string textColor = node.attribute("color").as_string();
-        // std::string textStyle = node.attribute("font-style").as_string();
-        // std::string textWeight = node.attribute("font-weight").as_string();
-        for (pugi::xml_node figure : node.children("figure")) {
-            std::string textStr;
-            if (paren) textStr.append("(");
-            textStr.append(ConvertFigureGlyph(figure.child("prefix").text().as_string()));
-            textStr.append(figure.child("figure-number").text().as_string());
-            textStr.append(ConvertFigureGlyph(figure.child("suffix").text().as_string()));
-            if (paren) textStr.append(")");
-            F *f = new F();
-            if (figure.child("extend")) f->SetExtender(BOOLEAN_true);
-            Text *text = new Text();
-            text->SetText(UTF8to32(textStr));
-            f->AddChild(text);
-            fb->AddChild(f);
+    const bool paren = node.attribute("parentheses").as_bool();
+
+    // std::string textColor = node.attribute("color").as_string();
+    // std::string textStyle = node.attribute("font-style").as_string();
+    // std::string textWeight = node.attribute("font-weight").as_string();
+    for (pugi::xml_node figure : node.children("figure")) {
+        std::string textStr;
+        if (paren) textStr.append("(");
+        textStr.append(ConvertFigureGlyph(figure.child("prefix").text().as_string()));
+        textStr.append(figure.child("figure-number").text().as_string());
+        textStr.append(ConvertFigureGlyph(figure.child("suffix").text().as_string()));
+        if (paren) textStr.append(")");
+        if (textStr.empty()) continue;
+        F *f = new F();
+        pugi::xml_node extend = figure.child("extend");
+        if (extend && !HasAttributeWithValue(extend, "type", "stop")) {
+            f->SetExtender(BOOLEAN_true);
         }
-        harm->AddChild(fb);
-        harm->SetTstamp((double)(m_durTotal + m_durFb) * (double)m_meterUnit / (double)(4 * m_ppq) + 1.0);
-        m_durFb += node.child("duration").text().as_int();
-        m_controlElements.push_back({ measureNum, harm });
-        m_harmStack.push_back(harm);
+        Text *text = new Text();
+        text->SetText(UTF8to32(textStr));
+        f->AddChild(text);
+        figures.push_back(f);
     }
+    if (figures.empty()) return;
+
+    Harm *harm = new Harm();
+    Fb *fb = new Fb();
+    for (auto &fig : figures) {
+        fb->AddChild(fig);
+    }
+    harm->AddChild(fb);
+    harm->SetTstamp((double)(m_durTotal + m_durFb) * (double)m_meterUnit / (double)(4 * m_ppq) + 1.0);
+    m_durFb += node.child("duration").text().as_int();
+    m_controlElements.push_back({ measureNum, harm });
+    m_harmStack.push_back(harm);
+    figures.clear();
 }
 
 void MusicXmlInput::ReadMusicXmlForward(pugi::xml_node node, Measure *measure, const std::string &measureNum)
@@ -3235,6 +3246,7 @@ void MusicXmlInput::ReadMusicXmlNote(
             else {
                 dynamStr += xmlDynamPart.name();
             }
+            if (xmlDynamPart != xmlDynam.last_child()) dynamStr += " ";
         }
         Text *text = new Text();
         text->SetText(UTF8to32(dynamStr));
@@ -3511,7 +3523,7 @@ void MusicXmlInput::ReadMusicXmlNote(
     }
 
     // tuplet end
-    pugi::xpath_node tupletEnd = notations.node().select_node("tuplet[@type='stop']");
+    pugi::xpath_node tupletEnd = node.select_node("notations/tuplet[@type='stop']");
     if (tupletEnd) {
         RemoveLastFromStack(TUPLET, layer);
     }
@@ -3546,36 +3558,39 @@ void MusicXmlInput::ReadMusicXmlNote(
 
     // add StartIDs to dir, dynam, and pedal
     if (!m_dirStack.empty()) {
-        for (auto iter = m_dirStack.begin(); iter != m_dirStack.end(); ++iter) {
-            if (!(*iter)->HasStaff())
-                (*iter)->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+        for (auto &dir : m_dirStack) {
+            if (!dir->HasStaff()) {
+                dir->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+            }
         }
         m_dirStack.clear();
     }
     if (!m_dynamStack.empty()) {
-        for (auto iter = m_dynamStack.begin(); iter != m_dynamStack.end(); ++iter) {
-            if (!(*iter)->HasStaff())
-                (*iter)->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+        for (auto &dynam : m_dynamStack) {
+            if (!dynam->HasStaff()) {
+                dynam->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+            }
         }
         m_dynamStack.clear();
     }
     if (!m_harmStack.empty()) {
-        for (auto iter = m_harmStack.begin(); iter != m_harmStack.end(); ++iter) {
-            (*iter)->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+        for (auto &harm : m_harmStack) {
+            harm->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
         }
         m_harmStack.clear();
     }
     if (!m_octaveStack.empty()) {
-        for (auto iter = m_octaveStack.begin(); iter != m_octaveStack.end(); ++iter) {
-            (*iter)->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
-            (*iter)->SetStartid(m_ID);
+        for (auto &oct : m_octaveStack) {
+            oct->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+            oct->SetStartid(m_ID);
         }
         m_octaveStack.clear();
     }
     if (!m_pedalStack.empty()) {
-        for (auto iter = m_pedalStack.begin(); iter != m_pedalStack.end(); ++iter) {
-            if (!(*iter)->HasStaff())
-                (*iter)->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+        for (auto &ped : m_pedalStack) {
+            if (!ped->HasStaff()) {
+                ped->SetStaff(staff->AttNInteger::StrToXsdPositiveIntegerList(std::to_string(staff->GetN())));
+            }
         }
         m_pedalStack.clear();
     }
@@ -3617,7 +3632,7 @@ bool MusicXmlInput::ReadMusicXmlBeamsAndTuplets(const pugi::xml_node &node, Laye
     pugi::xpath_node currentMeasure = node.select_node("ancestor::measure");
 
     pugi::xml_node beamEnd = node.select_node("./following-sibling::note[beam[@number='1' and text()='end']]").node();
-    pugi::xml_node tupletEnd = node.select_node("./following-sibling::note[notations[tuplet[@type='stop']]]").node();
+    pugi::xml_node tupletEnd = node.select_node("./following-sibling::note[notations/tuplet[@type='stop']]").node();
 
     const auto measureNodeChildren = currentMeasure.node().children();
     std::vector<pugi::xml_node> currentMeasureNodes(measureNodeChildren.begin(), measureNodeChildren.end());
@@ -3643,7 +3658,7 @@ bool MusicXmlInput::ReadMusicXmlBeamsAndTuplets(const pugi::xml_node &node, Laye
     else if (beamStart) {
         // find whether there is a tuplet that starts during the span of the beam
         pugi::xpath_node nextTupletStart
-            = node.select_node("./following-sibling::note[notations[tuplet[@type='start']]]").node();
+            = node.select_node("./following-sibling::note[notations/tuplet[@type='start']]").node();
 
         // find start and end of the beam
         const auto beamStartIterator = std::find(currentMeasureNodes.begin(), currentMeasureNodes.end(), node);
@@ -3839,12 +3854,15 @@ KeySig *MusicXmlInput::ConvertKey(const pugi::xml_node &key)
     if (key.child("fifths")) {
         short int fifths = key.child("fifths").text().as_int();
         std::string keySigStr;
-        if (fifths < 0)
+        if (fifths < 0) {
             keySigStr = StringFormat("%df", abs(fifths));
-        else if (fifths > 0)
+        }
+        else if (fifths > 0) {
             keySigStr = StringFormat("%ds", fifths);
-        else
+        }
+        else {
             keySigStr = "0";
+        }
         keySig->SetSig(keySig->AttKeySigLog::StrToKeysignature(keySigStr));
 
         if (key.child("cancel")) {
@@ -4475,8 +4493,8 @@ std::string MusicXmlInput::ConvertFigureGlyph(const std::string &value)
         { "double-sharp", "𝄪" }, //
         { "flat-flat", "𝄫" }, //
         { "sharp-sharp", "♯♯" }, //
-        { "backslash", "\u20E5" }, //
-        { "slash", "\u0338" }, //
+        { "backslash", "\xE2\x83\xA5" }, // utf-8 byte encoding for non-spacing backslash U+20E5
+        { "slash", "\xCC\xB8" }, // utf-8 byte encoding for non-spacing slash U+0338
         { "cross", "+" } //
     };
 
