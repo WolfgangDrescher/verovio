@@ -481,8 +481,8 @@ protected:
     void processTieEnd(Note *note, hum::HTp token, const std::string &tstring, int subindex);
     void addFermata(hum::HTp token, vrv::Object *parent = NULL);
     void addBreath(hum::HTp token, vrv::Object *parent = NULL);
-    void addTrill(hum::HTp token);
-    void addTurn(vrv::Object *linked, hum::HTp token);
+    void addTrill(vrv::Object *linked, hum::HTp token);
+    void addTurn(hum::HTp token, const string &tok, int noteIndex);
     void addMordent(vrv::Object *linked, hum::HTp token);
     void addOrnaments(vrv::Object *object, hum::HTp token);
     void addArpeggio(vrv::Object *object, hum::HTp token);
@@ -811,6 +811,7 @@ protected:
     void setFontStyleForHarm(Harm *harm, const std::string &style);
     std::u32string addSemitoneAdjustmentsToDeg(
         hum::HTp token, int arrowQ, int accidQ, int solfegeQ, int sharps, int flats);
+    int hasParallelNote(hum::HTp token);
 
     // header related functions: ///////////////////////////////////////////
     void createHeader();

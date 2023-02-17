@@ -1235,14 +1235,26 @@ void HumdrumInput::analyzeDegreeInterpretations(hum::HTp starttok)
 
 //////////////////////////////
 //
-// HumdrumInput::analyzeTextInterpretation --  Ignoring spine splits
-//     for now.
+// HumdrumInput::analyzeTextInterpretation --  deals with automatic
+//     styling of elisions/spaces as well as word extension.
+//
+// *elision  = Display spaces in **text tokens as elisions (default).
+// *Xelision = Do not display spaces as elisions.
+// *worex    = Display word extension for melismas after ending of works.
+// *Xworex   = Do not display word extension.
+//
+// *worex/*Xelision override any explicit word extenders ("_" character)
+// after ending syllable of words.
 //
 
 void HumdrumInput::analyzeTextInterpretation(hum::HTp starttok)
 {
     hum::HTp current = starttok;
+    hum::HTp lastend = NULL; // last syllable of a word in spine.
+    int melismaNoteCount = 0;
     bool elisionQ = true;
+    bool foundWorex = false; // used encoded "_" characters for line extension.
+    bool worexQ = false;
     hum::HumRegex hre;
     while (current) {
         if (current->isInterpretation()) {
@@ -1252,29 +1264,148 @@ void HumdrumInput::analyzeTextInterpretation(hum::HTp starttok)
             else if (*current == "*Xelision") {
                 elisionQ = false;
             }
-        }
-        if (elisionQ) {
-            current = current->getNextToken();
-            continue;
+            if (*current == "*worex") {
+                foundWorex = true;
+                worexQ = true;
+            }
+            else if (*current == "*Xworex") {
+                foundWorex = true;
+                worexQ = false;
+            }
         }
         if (!current->isData()) {
             current = current->getNextToken();
             continue;
         }
+
+        // current is a data token at this point.
+
         if (current->isNull()) {
-            current = current->getNextToken();
-            continue;
-        }
-        if (current->find(' ') == std::string::npos) {
+            // Keep track of any notes that are not
+            // attached to a text syllable
+            melismaNoteCount += hasParallelNote(current);
             current = current->getNextToken();
             continue;
         }
 
-        std::string text = *current;
-        hre.replaceDestructive(text, "&nbsp;", " ", "g");
-        current->setValue("auto", "text", text);
+        // current is some sort of syllable at this point.
+
+        if (foundWorex) {
+            // Check for automatic addition or suppresion of word extension lines.
+            if (lastend && ((lastend->back() == '_') || (hre.search(lastend, "[^-]$")))) {
+                // The last syllable is the end of a word so decide whether or
+                // not to add/suppres line extension based on melima note count.
+                if (melismaNoteCount) {
+                    if (worexQ && !lastend->empty()) {
+                        // force a word extender
+                        if (lastend->back() != '_') {
+                            std::string text = *lastend;
+                            text += "_";
+                            lastend->setValue("auto", "text", text);
+                        }
+                    }
+                    else {
+                        // suppress any word extender
+                        if ((!lastend->empty()) && (lastend->back() == '_')) {
+                            std::string text = *lastend;
+                            text.resize(text.size() - 1);
+                            lastend->setValue("auto", "text", text);
+                        }
+                    }
+                }
+                melismaNoteCount = 0;
+                lastend = NULL;
+            }
+            if ((current->back() == '_') || (hre.search(current, "[^-]$"))) {
+                // This syllable is the end of a word, so reset the melisma count.
+                melismaNoteCount = 0;
+                lastend = current;
+            }
+            else {
+                lastend = NULL;
+            }
+        }
+
+        // Check for elision styling.
+        if (!elisionQ) {
+            if (current->find(' ') == std::string::npos) {
+                current = current->getNextToken();
+                continue;
+            }
+            std::string text = *current;
+            hre.replaceDestructive(text, "&nbsp;", " ", "g");
+            current->setValue("auto", "text", text);
+        }
+
         current = current->getNextToken();
     }
+
+    // If lastend is not NULL, then handle its word extension line state:
+
+    if (foundWorex) {
+        // Check for automatic addition or suppresion of word extension lines.
+        if (lastend && ((lastend->back() == '_') || (hre.search(lastend, "[^-]$")))) {
+            // The last syllable is the end of a word so decide whether or
+            // not to add/suppres line extension based on melima note count.
+            if (melismaNoteCount) {
+                if (worexQ && !lastend->empty()) {
+                    // force a word extender
+                    if (lastend->back() != '_') {
+                        std::string text = *lastend;
+                        text += "_";
+                        lastend->setValue("auto", "text", text);
+                    }
+                }
+                else {
+                    // suppress any word extender
+                    if ((!lastend->empty()) && (lastend->back() == '_')) {
+                        std::string text = *lastend;
+                        text.resize(text.size() - 1);
+                        lastend->setValue("auto", "text", text);
+                    }
+                }
+            }
+            melismaNoteCount = 0;
+            lastend = NULL;
+        }
+        lastend = NULL;
+    }
+}
+
+//////////////////////////////
+//
+// HumdrumInput::hasParallelNote -- Go backwards on the line and count
+//   any note attack (or tied note) on the first staff-like spine (track)
+//   found to the left.  If there is a spine split in the text and or
+//   **kern data, then this algorithm needs to be refined further.
+//
+
+int HumdrumInput::hasParallelNote(hum::HTp token)
+{
+    hum::HTp current = token;
+    int track = -1;
+    while (current) {
+        current = current->getPreviousField();
+        if (!current) {
+            break;
+        }
+        if (current->isStaff()) {
+            int ctrack = current->getTrack();
+            if (track < 0) {
+                track = ctrack;
+            }
+            if (track != ctrack) {
+                return 0;
+            }
+            if (current->isNull()) {
+                continue;
+            }
+            if (current->isNote()) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 //////////////////////////////
@@ -4090,6 +4221,7 @@ void HumdrumInput::prepareHeaderFooter()
 //           i = initials for given names and full last name
 //           l = last name
 //           f = first name
+//           y = year
 //
 
 std::string HumdrumInput::processTemplateOperator(const std::string &value, const std::string &op)
@@ -4192,10 +4324,10 @@ std::string HumdrumInput::processTemplateOperator(const std::string &value, cons
             death = cdates.substr(pos + 1);
             int birthyear = 0;
             int deathyear = 0;
-            if (hre.search(birth, "(\\d\\d\\d\\d)")) {
+            if (hre.search(birth, "(\\d{4})")) {
                 birthyear = hre.getMatchInt(1);
             }
-            if (hre.search(death, "(\\d\\d\\d\\d)")) {
+            if (hre.search(death, "(\\d{4})")) {
                 deathyear = hre.getMatchInt(1);
             }
             if ((deathyear > 0) && (birthyear > 0)) {
@@ -4207,6 +4339,11 @@ std::string HumdrumInput::processTemplateOperator(const std::string &value, cons
                 else {
                     outputdate += to_string(deathyear);
                 }
+            }
+        }
+        else {
+            if (hre.search(cdates, "(\\d{4})")) {
+                output = hre.getMatch(1);
             }
         }
         output = outputdate;
@@ -4224,16 +4361,21 @@ std::string HumdrumInput::processTemplateOperator(const std::string &value, cons
             death = cdates.substr(pos + 1);
             int birthyear = 0;
             int deathyear = 0;
-            if (hre.search(birth, "(\\d\\d\\d\\d)")) {
+            if (hre.search(birth, "(\\d{4})")) {
                 birthyear = hre.getMatchInt(1);
             }
-            if (hre.search(death, "(\\d\\d\\d\\d)")) {
+            if (hre.search(death, "(\\d{4})")) {
                 deathyear = hre.getMatchInt(1);
             }
             if ((deathyear > 0) && (birthyear > 0)) {
                 outputdate = to_string(birthyear);
                 outputdate += "&#8211;";
                 outputdate += to_string(deathyear);
+            }
+        }
+        else {
+            if (hre.search(cdates, "(\\d{4})")) {
+                output = hre.getMatch(1);
             }
         }
         output = outputdate;
@@ -24736,29 +24878,33 @@ bool HumdrumInput::isLeftmostSystemArpeggio(hum::HTp token)
 
 void HumdrumInput::addOrnaments(Object *object, hum::HTp token)
 {
-    std::vector<bool> chartable(128, false);
-    for (int i = 0; i < (int)token->size(); ++i) {
-        int intch = (unsigned char)token->at(i);
-        if (intch < 0 || intch > 127) {
-            continue;
-        }
-        chartable[intch] = true;
-    }
+    std::vector<string> subtoks = token->getSubtokens();
 
-    if (chartable['T'] || chartable['t']) {
-        addTrill(token);
-    }
-    if (chartable[';']) {
-        addFermata(token, object);
-    }
-    if (chartable[',']) {
-        addBreath(token, object);
-    }
-    if (chartable['W'] || chartable['w'] || chartable['M'] || chartable['m']) {
-        addMordent(object, token);
-    }
-    if (chartable['s'] || chartable['S'] || chartable['$']) {
-        addTurn(object, token);
+    for (int t = 0; t < (int)subtoks.size(); t++) {
+        std::vector<bool> chartable(128, false);
+        for (int i = 0; i < (int)subtoks.at(t).size(); ++i) {
+            int intch = (unsigned char)subtoks.at(t).at(i);
+            if (intch < 0 || intch > 127) {
+                continue;
+            }
+            chartable[intch] = true;
+        }
+
+        if (chartable['T'] || chartable['t']) {
+            addTrill(object, token);
+        }
+        if (chartable[';']) {
+            addFermata(token, object);
+        }
+        if (chartable[',']) {
+            addBreath(token, object);
+        }
+        if (chartable['W'] || chartable['w'] || chartable['M'] || chartable['m']) {
+            addMordent(object, token);
+        }
+        if (chartable['s'] || chartable['S'] || chartable['$']) {
+            addTurn(token, subtoks.at(t), subtoks.size() > 1 ? t : -1);
+        }
     }
 
     // addOrnamentMarkers(token);
@@ -24787,12 +24933,12 @@ void HumdrumInput::addOrnaments(Object *object, hum::HTp token)
 // Deal with cases where the accidental should be hidden but different from sounding accidental.  This
 // can be done when MEI allows @accidlower.ges and @accidupper.ges.
 //
-// Assuming not in chord for now.
+// noteIndex == -1 means the note is not in a chord; otherwise, the noteIndex is the nth note in
+// a chord (from left to right in a token).
 //
 
-void HumdrumInput::addTurn(Object *linked, hum::HTp token)
+void HumdrumInput::addTurn(hum::HTp token, const string &tok, int noteIndex)
 {
-    std::string &tok = *token;
     int turnstart = -1;
     int turnend = -1;
 
@@ -24813,57 +24959,41 @@ void HumdrumInput::addTurn(Object *linked, hum::HTp token)
         }
     }
 
+    if (turnstart == turnend) {
+        return;
+    }
     std::string turnstr = tok.substr(turnstart, turnend - turnstart + 1);
 
-    bool delayedQ = turnstr[0] == 's' ? false : true;
+    if (turnstr.empty()) {
+        return;
+    }
 
-    if ((!delayedQ) && turnstr.size() == 1) {
-        // not an invalid turn indication
+    bool delayedQ = turnstr.at(0) == 's' ? false : true;
+    if ((!delayedQ) && (turnstr.size() == 1)) {
+        // not a valid turn indication
         return;
     }
 
     bool invertedQ = false;
-    if (((!delayedQ) && turnstr[1] == '$') || (turnstr[0] == '$')) {
+    if ((turnstr.size() > 1) && (((!delayedQ) && turnstr.at(1) == '$') || (turnstr.at(0) == '$'))) {
         invertedQ = true;
     }
 
     // int layer = m_currentlayer; // maybe place below if in layer 2
     int staff = getNoteStaff(token, m_currentstaff);
-    int staffindex = staff - 1;
-    std::vector<humaux::StaffStateVariables> &ss = m_staffstates;
 
     Turn *turn = new Turn();
     appendElement(m_measure, turn);
     setStaff(turn, staff);
 
-    hum::HumNum tstamp = getMeasureTstamp(token, staffindex);
     if (delayedQ) {
-        hum::HumNum duration = token->getDuration();
-        // if (ss[staffindex].meter_bottom == 0) {
-        //    duration /= 2;
-        // } else {
-        duration *= ss[staffindex].meter_bottom;
-        // }
-        duration /= 4;
-        duration /= 2;
-        tstamp += duration;
-        turn->SetTstamp(tstamp.getFloat());
-    }
-    else if (!linked) {
-        turn->SetTstamp(tstamp.getFloat());
-    }
-    else {
-        turn->SetStartid("#" + linked->GetID());
+        turn->SetDelayed(BOOLEAN_true);
     }
 
-    if (invertedQ) {
-        turn->SetForm(turnLog_FORM_lower);
-    }
-    else {
-        turn->SetForm(turnLog_FORM_upper);
-    }
+    std::string noteid = getLocationId("note", token, noteIndex);
+    turn->SetStartid("#" + noteid);
 
-    setLocationId(turn, token);
+    turn->SetForm(invertedQ ? turnLog_FORM_lower : turnLog_FORM_lower);
 
     if (m_signifiers.above) {
         if (turnend < (int)token->size() - 1) {
@@ -24880,15 +25010,17 @@ void HumdrumInput::addTurn(Object *linked, hum::HTp token)
         }
     }
 
-    int subtok = 0;
+    int subtok = noteIndex;
     int tokindex = subtok;
     if (subtok < 0) {
         tokindex = 0;
     }
 
     // Check for automatic upper and lower accidental on turn:
-    std::string loweraccid = token->getValue("auto", to_string(tokindex), "turnLowerAccidental");
-    std::string upperaccid = token->getValue("auto", to_string(tokindex), "turnUpperAccidental");
+    std::string loweraccid;
+    std::string upperaccid;
+    loweraccid = token->getValue("auto", to_string(tokindex), "turnLowerAccidental");
+    upperaccid = token->getValue("auto", to_string(tokindex), "turnUpperAccidental");
     if (!loweraccid.empty()) {
         if (loweraccid == "1") {
             loweraccid = "#";
@@ -25203,7 +25335,7 @@ void HumdrumInput::addMordent(Object *linked, hum::HTp token)
         if (mindex.size() == 1) {
             subtok = -1;
         }
-        mordent->SetStartid("#" + getLocationId("note", token, subtok));
+        mordent->SetStartid("#" + linked->GetID());
         setLocationId(mordent, token, subtok);
 
         if (lowerQ) {
@@ -25312,7 +25444,7 @@ int HumdrumInput::getNoteStaff(hum::HTp token, int homestaff)
 // HumdrumInput::addTrill -- Add trill for note.
 //
 
-void HumdrumInput::addTrill(hum::HTp token)
+void HumdrumInput::addTrill(Object *linked, hum::HTp token)
 {
     int subtok = 0;
     size_t tpos = std::string::npos;
@@ -25365,7 +25497,7 @@ void HumdrumInput::addTrill(hum::HTp token)
         setPlaceRelStaff(trill, "below", false);
     }
 
-    trill->SetStartid("#" + getLocationId("note", token, subtok));
+    trill->SetStartid("#" + linked->GetID());
     // Setting trill@tstamp:
     // hum::HumNum tstamp = getMeasureTstamp(token, staffindex);
     // trill->SetTstamp(tstamp.getFloat());
