@@ -194,10 +194,10 @@ bool LayerElement::IsGraceNote() const
     // For accid, artic, etc.. look at the parent note / chord
     else {
         // For an accid we expect to be the child of a note - the note will lookup at the chord parent in necessary
-        const Note *note = dynamic_cast<const Note *>(this->GetFirstAncestor(NOTE, MAX_ACCID_DEPTH));
+        const Note *note = vrv_cast<const Note *>(this->GetFirstAncestor(NOTE, MAX_ACCID_DEPTH));
         if (note) return note->IsGraceNote();
         // For an artic we can be direct child of a chord
-        const Chord *chord = dynamic_cast<const Chord *>(this->GetFirstAncestor(CHORD, MAX_ACCID_DEPTH));
+        const Chord *chord = vrv_cast<const Chord *>(this->GetFirstAncestor(CHORD, MAX_ACCID_DEPTH));
         if (chord) return chord->IsGraceNote();
     }
     return false;
@@ -867,8 +867,8 @@ MapOfDotLocs LayerElement::CalcOptimalDotLocations()
         return {};
     }
 
-    Staff *staff = this->GetAncestorStaff();
-    const int layerCount = staff->GetChildCount(LAYER);
+    Layer *layer = vrv_cast<Layer *>(this->GetFirstAncestor(LAYER));
+    const int layerCount = layer->GetLayerCountForTimeSpanOf(this);
 
     // Calculate primary/secondary dot locations
     const MapOfDotLocs dotLocs1 = this->CalcDotLocations(layerCount, true);
@@ -1084,6 +1084,13 @@ std::pair<int, int> LayerElement::CalculateXPosOffset(FunctorParams *functorPara
         LayerElement *element = vrv_cast<LayerElement *>(boundingBox);
         assert(element);
         int margin = (params->m_doc->GetRightMargin(element) + selfLeftMargin) * drawingUnit;
+        if (element->Is(NOTE)) {
+            Note *note = vrv_cast<Note *>(element);
+            if (note->HasStemMod() && note->GetStemMod() < STEMMODIFIER_MAX) {
+                const int tremWidth = params->m_doc->GetGlyphWidth(SMUFL_E220_tremolo1, params->m_staffSize, false);
+                margin = std::max(margin, drawingUnit / 3 + tremWidth / 2);
+            }
+        }
         bool hasOverlap = this->HorizontalContentOverlap(boundingBox, margin);
         if (!hasOverlap) continue;
 
@@ -1189,11 +1196,11 @@ int LayerElement::AlignHorizontally(FunctorParams *functorParams)
 
     AlignmentType type = ALIGNMENT_DEFAULT;
 
-    Chord *chordParent = dynamic_cast<Chord *>(this->GetFirstAncestor(CHORD, MAX_CHORD_DEPTH));
-    Ligature *ligatureParent = dynamic_cast<Ligature *>(this->GetFirstAncestor(LIGATURE, MAX_LIGATURE_DEPTH));
-    Note *noteParent = dynamic_cast<Note *>(this->GetFirstAncestor(NOTE, MAX_NOTE_DEPTH));
-    Rest *restParent = dynamic_cast<Rest *>(this->GetFirstAncestor(REST, MAX_NOTE_DEPTH));
-    TabGrp *tabGrpParent = dynamic_cast<TabGrp *>(this->GetFirstAncestor(TABGRP, MAX_TABGRP_DEPTH));
+    Chord *chordParent = vrv_cast<Chord *>(this->GetFirstAncestor(CHORD, MAX_CHORD_DEPTH));
+    Ligature *ligatureParent = vrv_cast<Ligature *>(this->GetFirstAncestor(LIGATURE, MAX_LIGATURE_DEPTH));
+    Note *noteParent = vrv_cast<Note *>(this->GetFirstAncestor(NOTE, MAX_NOTE_DEPTH));
+    Rest *restParent = vrv_cast<Rest *>(this->GetFirstAncestor(REST, MAX_NOTE_DEPTH));
+    TabGrp *tabGrpParent = vrv_cast<TabGrp *>(this->GetFirstAncestor(TABGRP, MAX_TABGRP_DEPTH));
     const bool ligatureAsBracket = params->m_doc->GetOptions()->m_ligatureAsBracket.GetValue();
 
     if (chordParent) {
@@ -1406,7 +1413,7 @@ int LayerElement::CalcAlignmentPitchPos(FunctorParams *functorParams)
     if (this->Is(ACCID)) {
         Accid *accid = vrv_cast<Accid *>(this);
         assert(accid);
-        Note *note = dynamic_cast<Note *>(this->GetFirstAncestor(NOTE));
+        Note *note = vrv_cast<Note *>(this->GetFirstAncestor(NOTE));
         // We should probably also avoid to add editorial accidentals to the accid space
         // However, since they are placed above by View::DrawNote it works without avoiding it
         if (note) {
@@ -1528,7 +1535,7 @@ int LayerElement::CalcAlignmentPitchPos(FunctorParams *functorParams)
             if ((rest->GetDur() == DUR_BR) && (staff->m_drawingLines < 2)) loc -= 2;
 
             // If within a beam, calculate the rest's height based on it's relationship to the notes that surround it
-            Beam *beam = dynamic_cast<Beam *>(this->GetFirstAncestor(BEAM, 1));
+            Beam *beam = vrv_cast<Beam *>(this->GetFirstAncestor(BEAM, 1));
             if (beam) {
                 beam->ResetList(beam);
 
@@ -2135,6 +2142,18 @@ int LayerElement::AdjustXPos(FunctorParams *functorParams)
             params->m_currentAlignment.m_overlappingBB = this;
         }
     }
+    else if (this->Is(NOTE) && (next == ALIGNMENT_MEASURE_RIGHT_BARLINE)) {
+        Note *note = vrv_cast<Note *>(this);
+        if (note->HasStemMod() && (note->GetStemMod() < STEMMODIFIER_MAX)
+            && (note->GetDrawingStemDir() == STEMDIRECTION_up)) {
+            const int adjust = drawingUnit;
+            params->m_cumulatedXShift += adjust;
+            params->m_upcomingMinPos += adjust;
+        }
+        else {
+            params->m_upcomingMinPos = std::max(selfRight, params->m_upcomingMinPos);
+        }
+    }
     else {
         params->m_upcomingMinPos = std::max(selfRight, params->m_upcomingMinPos);
     }
@@ -2214,16 +2233,16 @@ int LayerElement::PrepareCueSize(FunctorParams *functorParams)
         if (accid->GetFunc() == accidLog_FUNC_edit)
             m_drawingCueSize = true;
         else {
-            Note *note = dynamic_cast<Note *>(this->GetFirstAncestor(NOTE, MAX_ACCID_DEPTH));
+            Note *note = vrv_cast<Note *>(this->GetFirstAncestor(NOTE, MAX_ACCID_DEPTH));
             if (note) m_drawingCueSize = note->GetDrawingCueSize();
         }
     }
     else if (this->Is({ ARTIC, DOTS, FLAG, STEM })) {
-        Note *note = dynamic_cast<Note *>(this->GetFirstAncestor(NOTE, MAX_NOTE_DEPTH));
+        Note *note = vrv_cast<Note *>(this->GetFirstAncestor(NOTE, MAX_NOTE_DEPTH));
         if (note)
             m_drawingCueSize = note->GetDrawingCueSize();
         else {
-            Chord *chord = dynamic_cast<Chord *>(this->GetFirstAncestor(CHORD, MAX_CHORD_DEPTH));
+            Chord *chord = vrv_cast<Chord *>(this->GetFirstAncestor(CHORD, MAX_CHORD_DEPTH));
             if (chord) m_drawingCueSize = chord->GetDrawingCueSize();
         }
     }
@@ -2258,7 +2277,7 @@ int LayerElement::PrepareCrossStaff(FunctorParams *functorParams)
     params->m_currentCrossLayer = NULL;
 
     AttNIntegerComparison comparisonFirst(STAFF, crossElement->GetStaff().at(0));
-    m_crossStaff = dynamic_cast<Staff *>(params->m_currentMeasure->FindDescendantByComparison(&comparisonFirst, 1));
+    m_crossStaff = vrv_cast<Staff *>(params->m_currentMeasure->FindDescendantByComparison(&comparisonFirst, 1));
     if (!m_crossStaff) {
         LogWarning("Could not get the cross staff reference '%d' for element '%s'", crossElement->GetStaff().at(0),
             this->GetID().c_str());
@@ -2282,10 +2301,10 @@ int LayerElement::PrepareCrossStaff(FunctorParams *functorParams)
     // int layerN = durElement->HasLayer() ? durElement->GetLayer() : (*currentLayer)->GetN();
     AttNIntegerComparison comparisonFirstLayer(LAYER, layerN);
     bool direction = (parentStaff->GetN() < m_crossStaff->GetN()) ? FORWARD : BACKWARD;
-    m_crossLayer = dynamic_cast<Layer *>(m_crossStaff->FindDescendantByComparison(&comparisonFirstLayer, 1));
+    m_crossLayer = vrv_cast<Layer *>(m_crossStaff->FindDescendantByComparison(&comparisonFirstLayer, 1));
     if (!m_crossLayer) {
         // Just try to pick the first one... (i.e., last one when crossing above)
-        m_crossLayer = dynamic_cast<Layer *>(m_crossStaff->FindDescendantByType(LAYER, UNSPECIFIED, direction));
+        m_crossLayer = vrv_cast<Layer *>(m_crossStaff->FindDescendantByType(LAYER, UNSPECIFIED, direction));
     }
     if (!m_crossLayer) {
         // Nothing we can do
@@ -2390,7 +2409,12 @@ int LayerElement::PrepareDelayedTurns(FunctorParams *functorParams)
 
     if (params->m_previousElement) {
         assert(params->m_currentTurn);
+        if (this->Is(NOTE) && params->m_currentChord) {
+            Note *note = vrv_cast<Note *>(this);
+            if (note->IsChordTone() == params->m_currentChord) return FUNCTOR_CONTINUE;
+        }
         params->m_currentTurn->m_drawingEndElement = this;
+        params->m_currentChord = NULL;
         params->m_currentTurn = NULL;
         params->m_previousElement = NULL;
     }
@@ -2398,6 +2422,14 @@ int LayerElement::PrepareDelayedTurns(FunctorParams *functorParams)
     if (params->m_delayedTurns.count(this)) {
         params->m_previousElement = this;
         params->m_currentTurn = params->m_delayedTurns.at(this);
+        if (this->Is(CHORD)) {
+            return FUNCTOR_SIBLINGS;
+        }
+        else if (this->Is(NOTE)) {
+            Note *note = vrv_cast<Note *>(this);
+            Chord *chord = note->IsChordTone();
+            if (chord) params->m_currentChord = chord;
+        }
     }
 
     return FUNCTOR_CONTINUE;
