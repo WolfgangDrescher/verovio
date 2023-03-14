@@ -825,6 +825,10 @@ protected:
     void checkForLineContinuations(hum::HTp token);
     std::u32string convertNumberToWstring(int number);
     void appendTextToRend(Rend *rend, const std::string &content);
+    void parseMultiVerovioOptions(std::map<std::string, std::string> &parameters, const string &input);
+    void addSforzandoToNote(hum::HTp token, int staffindex);
+    void addDynamicsMark(hum::HTp dyntok, hum::HTp token, hum::HLp line, const std::string &letters, int staffindex,
+        int staffadj, int trackdiff);
 
     // header related functions: ///////////////////////////////////////////
     void createHeader();
