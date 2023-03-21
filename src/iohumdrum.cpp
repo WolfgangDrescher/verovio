@@ -8249,6 +8249,7 @@ void HumdrumInput::addHarmFloatsForMeasure(int startline, int endline)
             }
             if (token->isKernLike()) {
                 active = true;
+                track = token->getTrack();
                 continue;
             }
 
@@ -8356,7 +8357,6 @@ void HumdrumInput::addHarmFloatsForMeasure(int startline, int endline)
             std::string tracktext = getTrackText(token);
             harm->SetN(tracktext);
 
-            track = token->getTrack();
             int staffindex = m_rkern[track];
             if (staffindex >= 0) {
                 xstaffindex = staffindex;
@@ -11210,6 +11210,7 @@ bool HumdrumInput::fillContentsOfLayer(int track, int startline, int endline, in
                     // of the rest because there will be invisible rests
                     // added in later measure(s).
                     Rest *rest = new Rest;
+                    setLocationId(rest, trest);
                     appendElement(layer, rest);
                     convertRest(rest, trest, -1, staffindex);
                 }
@@ -24983,6 +24984,13 @@ void HumdrumInput::addFermata(hum::HTp token, Object *parent)
 {
     int layer = m_currentlayer;
     int staff = m_currentstaff;
+
+    int fermataProcessed = token->getValueInt("auto", "fermataProcessed");
+    if (fermataProcessed) {
+        // Only add one fermata (or pair) per note/chord/rest/barline.
+        return;
+    }
+    token->setValue("auto", "fermataProcessed", true);
 
     if (token->find(";") == std::string::npos) {
         return;
