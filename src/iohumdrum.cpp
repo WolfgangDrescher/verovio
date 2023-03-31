@@ -715,6 +715,20 @@ bool HumdrumInput::convertHumdrum()
         }
     }
 
+    // Kernify files if they have no stafflike spine.
+    hum::Tool_kernify kernify;
+    for (int i = 0; i < m_infiles.getCount(); ++i) {
+        if (hasNoStaves(m_infiles[i])) {
+            kernify.run(m_infiles[i]);
+            if (kernify.hasHumdrumText()) {
+                m_infiles[i].readString(kernify.getHumdrumText());
+            }
+            else {
+                // should have auto updated itself in the kernify filter.
+            }
+        }
+    }
+
     hum::HumdrumFile &infile = m_infiles[0];
 
     // Check if a mensural music score should be produced (and ignore **kerns,
@@ -927,6 +941,27 @@ bool HumdrumInput::convertHumdrum()
     // section->AddChild(pb);
 
     return status;
+}
+
+//////////////////////////////
+//
+// HumdrumInput::hasNoStaves --
+//
+
+bool HumdrumInput::hasNoStaves(hum::HumdrumFile &infile)
+{
+    for (int i = 0; i < infile.getLineCount(); i++) {
+        if (!infile[i].isExclusiveInterpretation()) {
+            continue;
+        }
+        for (int j = 0; j < infile[i].getFieldCount(); j++) {
+            hum::HTp token = infile.token(i, j);
+            if (token->isKernLike()) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 //////////////////////////////
@@ -1889,6 +1924,11 @@ Tie *HumdrumInput::addHangingTieToNextItem(hum::HTp token, int subindex, hum::Hu
 void HumdrumInput::processHangingTieEnd(
     Note *note, hum::HTp token, const std::string &tstring, int subindex, hum::HumNum meterunit)
 {
+    // Ignore tie when token is suppressed with yy signifier
+    if (token->find("yy") != std::string::npos) {
+        return;
+    }
+
     Tie *tie = NULL;
     hum::HumNum position = token->getDurationFromStart();
     if (position == 0) {
@@ -11209,10 +11249,21 @@ bool HumdrumInput::fillContentsOfLayer(int track, int startline, int endline, in
                     // (so not an mRest), and update the visual duration
                     // of the rest because there will be invisible rests
                     // added in later measure(s).
-                    Rest *rest = new Rest;
-                    setLocationId(rest, trest);
-                    appendElement(layer, rest);
-                    convertRest(rest, trest, -1, staffindex);
+                    if (trest->find("yy") != std::string::npos) {
+                        Space *irest = new Space();
+                        if (m_doc->GetOptions()->m_humType.GetValue()) {
+                            embedQstampInClass(irest, trest, *trest);
+                        }
+                        setLocationId(irest, trest);
+                        appendElement(elements, pointers, irest);
+                        convertRhythm(irest, trest);
+                    }
+                    else {
+                        Rest *rest = new Rest;
+                        setLocationId(rest, trest);
+                        appendElement(layer, rest);
+                        convertRest(rest, trest, -1, staffindex);
+                    }
                 }
                 else {
                     std::cerr << "Strange error for adding rest " << trest << std::endl;
@@ -20099,6 +20150,21 @@ void HumdrumInput::insertTuplet(std::vector<std::string> &elements, std::vector<
         // if explicitly requested:
         tuplet->SetNumVisible(BOOLEAN_false);
     }
+
+    // Hide bracket and number if all data tokens of tuplet are suppressed with yy signifier
+    bool allTokensAreHidden = true;
+    for (int i = 0; i < (int)tgs.size(); ++i) {
+        const hum::HTp token = tgs.at(i).token;
+        if (token->isData() && token->find("yy") == std::string::npos) {
+            allTokensAreHidden = false;
+            break;
+        }
+    }
+    if (allTokensAreHidden) {
+        tuplet->SetBracketVisible(BOOLEAN_false);
+        tuplet->SetNumVisible(BOOLEAN_false);
+    }
+
     hum::HumNum base = tg.numbase;
     // if (!base.isPowerOfTwo()) {
     //     tuplet->SetNumFormat(tupletVis_NUMFORMAT_ratio);
@@ -24039,6 +24105,11 @@ std::vector<hum::HTp> HumdrumInput::getVerseAbbrLabels(hum::HTp token, int staff
 
 template <class ELEMENT> void HumdrumInput::convertVerses(ELEMENT element, hum::HTp token)
 {
+    // Ignore verse when token is suppressed with yy signifier
+    if (token->find("yy") != std::string::npos) {
+        return;
+    }
+
     int staff = m_rkern[token->getTrack()];
     std::vector<humaux::StaffStateVariables> &ss = m_staffstates;
     if (!ss[staff].verse) {
